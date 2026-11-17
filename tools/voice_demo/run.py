@@ -23,10 +23,14 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def preserved_files(source_root):
+def preserved_files(source_root, m05a3=False):
     paths = []
     for relative in ("local/reports/M05A", "local/voice_demo/M05A"):
         paths.extend(p for p in (source_root / relative).rglob("*") if p.is_file())
+    if m05a3:
+        for relative in ("local/reports/M05A2", "local/voice_demo/M05A2"):
+            paths.extend(p for p in (source_root / relative).rglob("*") if p.is_file())
+        paths.append(source_root / "local/assets/batches/B20261117-OWNER-02/owner_feedback.json")
     for relative in ("local/assets/manifests/PLAT-01.jsonl",
                      "local/assets/batches/B20261116-M02C-01/derived/transcript_supplements.jsonl",
                      "local/assets/batches/B20261116-OWNER-01/owner_feedback.json",
@@ -54,24 +58,30 @@ def main():
     parser.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
     parser.add_argument("--seed", type=int, default=20261117)
     parser.add_argument("--smoke-upstream", action="store_true")
-    parser.add_argument("--m05a2", action="store_true", help="Run the fixed R1 B8/C5 controlled experiment")
+    experiments = parser.add_mutually_exclusive_group()
+    experiments.add_argument("--m05a2", action="store_true", help="Run the fixed R1 B8/C5 controlled experiment")
+    experiments.add_argument("--m05a3", action="store_true", help="Run the fixed R1 short/punctuation/mixed-text experiment")
     args = parser.parse_args()
+    controlled = args.m05a2 or args.m05a3
+    task = "M05A3" if args.m05a3 else "M05A2"
     if Path(args.run_id).name != args.run_id or args.run_id in (".", ".."):
         parser.error("run-id must be a single directory name")
-    if args.m05a2:
+    if controlled:
         if args.reference_id != "R1" or args.seed != 20261117 or args.device != "cuda" or args.smoke_upstream:
-            parser.error("M05A2 fixes R1, seed 20261117, CUDA and no upstream smoke job")
-        for actual, relative in ((args.output_root, "local/voice_demo/M05A2"),
-                                 (args.report_root, "local/reports/M05A2"),
-                                 (args.cache_root, "local/cache/voice-M05A2")):
+            parser.error(task + " fixes R1, base seed 20261117, CUDA and no upstream smoke job")
+        for actual, relative in ((args.output_root, "local/voice_demo/" + task),
+                                 (args.report_root, "local/reports/" + task),
+                                 (args.cache_root, "local/cache/voice-" + task)):
             if actual.resolve() != (args.source_root / relative).resolve():
-                parser.error("M05A2 private output/report/cache path differs from task card")
+                parser.error(task + " private output/report/cache path differs from task card")
     output = args.output_root / args.run_id
     report = args.report_root / args.run_id
+    if output.exists() or report.exists():
+        parser.error("Refusing to overwrite an existing output or report run_id")
     output.mkdir(parents=True, exist_ok=False)
     report.mkdir(parents=True, exist_ok=False)
     STATE.update(report=report, stage="source_and_weight_validation")
-    before = preserved_files(args.source_root) if args.m05a2 else None
+    before = preserved_files(args.source_root, m05a3=args.m05a3) if controlled else None
     if before is not None:
         write_json(report / "preservation_before.json", before)
     runtime_lock = json.loads((Path(__file__).resolve().parents[2] / "configs/voice-runtime.lock.json").read_text(encoding="utf-8"))
@@ -94,6 +104,12 @@ def main():
         raise ValueError("CosyVoice code revision mismatch")
     if subprocess.check_output(["git", "-C", str(code), "status", "--porcelain"], text=True).strip():
         raise ValueError("CosyVoice source has local changes")
+    if args.m05a3:
+        matcha = code / "third_party/Matcha-TTS"
+        matcha_revision = subprocess.check_output(["git", "-C", str(matcha), "rev-parse", "HEAD"], text=True).strip()
+        if (matcha_revision != runtime_lock["source"]["matcha_tts_revision"]
+                or subprocess.check_output(["git", "-C", str(matcha), "status", "--porcelain"], text=True).strip()):
+            raise ValueError("Matcha-TTS revision or clean-source check failed")
     model_dir = args.runtime_root / "Fun-CosyVoice3-0.5B-2512"
     manifest = json.loads(args.model_manifest.read_text(encoding="utf-8"))
     if manifest["revision"] != MODEL_REVISION or not REQUIRED.issubset({f["path"] for f in manifest["files"]}):
@@ -125,11 +141,11 @@ def main():
         raise RuntimeError("CUDA requested but unavailable; no silent CPU fallback")
     torch.set_num_threads(4)
     text_set = json.loads(args.text_set.read_text(encoding="utf-8"))
-    if args.m05a2 and sha256(args.text_set) != runtime_lock["text_set"]["sha256"]:
-        raise ValueError("M05A2 text set differs from the locked baseline")
+    if controlled and sha256(args.text_set) != runtime_lock["text_set"]["sha256"]:
+        raise ValueError(task + " text set differs from the locked baseline")
     references = ["R1", "R2"] if args.reference_id == "both" else [args.reference_id]
     STATE["stage"] = "reference_resolution"
-    resolved = {ref: resolve_reference(args.source_root, ref, output / "references", original=args.m05a2)
+    resolved = {ref: resolve_reference(args.source_root, ref, output / "references", original=controlled)
                 for ref in references}
     write_json(report / "references.json", resolved)
     environment = {"python": sys.version, "executable": sys.executable,
@@ -140,10 +156,13 @@ def main():
                    "device": args.device, "torch_threads": torch.get_num_threads(),
                    "packages": {d.metadata["Name"]: d.version for d in importlib.metadata.distributions()},
                    "text_set_sha256": sha256(args.text_set), "import_s": import_s}
-    if args.m05a2:
+    if controlled:
         baseline_environment = json.loads((args.source_root / "local/reports/M05A/comparison-01/environment.json").read_text(encoding="utf-8"))
         if environment["packages"] != baseline_environment["packages"]:
-            raise ValueError("M05A2 environment packages differ from the A baseline")
+            raise ValueError(task + " environment packages differ from the A baseline")
+    if args.m05a3:
+        environment["matcha_tts_revision"] = matcha_revision
+        environment["experiment"] = task
     if args.device == "cuda":
         STATE["stage"] = "cuda_kernel_probe"
         environment.update(gpu=torch.cuda.get_device_name(0), capability=torch.cuda.get_device_capability(0),
@@ -182,8 +201,10 @@ def main():
     jobs = [(ref, item) for ref in references for item in text_set["items"]]
     plans = []
     completed_segments = {}
-    if args.m05a2:
+    if controlled:
         from experiment import build_jobs, join_segments
+        if args.m05a3:
+            from experiment_m05a3 import build_jobs
         plans = build_jobs(text_set["items"])
         write_json(report / "experiment_plan.json", plans)
         (output / "segments").mkdir()
@@ -193,6 +214,7 @@ def main():
                 grouped = len(plan["segments"]) > 1
                 jobs.append(("R1", {**segment, "id": plan["text_id"], "text": segment["spoken_text"],
                                     "group": plan["group"], "category": plan["category"],
+                                    "seed": plan.get("seed", args.seed),
                                     "change": plan["change"], "grouped": grouped,
                                     "stem": "segments/" + segment["segment_id"] if grouped
                                             else plan["group"] + "_" + plan["text_id"]}))
@@ -206,24 +228,25 @@ def main():
     for number, (ref, item) in enumerate(jobs):
         STATE["stage"] = "synthesis:" + ref + ":" + item["id"]
         reference = resolved[ref]
+        seed = item.get("seed", args.seed)
         prompt = PROMPT_PREFIX + reference["prompt_text"]
         record = {"created_at": datetime.now(timezone.utc).isoformat(),
                   "run_id": args.run_id, "text_set_id": text_set["text_set_id"],
                   "text_set_sha256": environment["text_set_sha256"],
                   "text_id": item["id"], "text": item.get("display_text", item["text"]), "category": item["category"],
                   "reference_id": ref, "reference": reference, "prompt_text_sent": prompt,
-                  "seed": args.seed, "device": args.device,
+                  "seed": seed, "device": args.device,
                   "model_revision": MODEL_REVISION, "model_manifest_sha256": model_manifest_sha256,
                   "generation_kind": "first_after_cold_load" if number == 0 else "warm",
                   "model_load_s": load_s, "parameters": environment["parameters"],
                   "onnx_providers": environment["onnx_providers"]}
-        if args.m05a2:
+        if controlled:
             record.update({key: item[key] for key in ("group", "display_text", "spoken_text", "change",
                                                      "segment_id", "segment_index", "char_start", "char_end")})
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
         import random
-        random.seed(args.seed)
+        random.seed(seed)
         if args.device == "cuda":
             torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()
@@ -234,7 +257,7 @@ def main():
                 with torch.inference_mode():
                     # Same frontend/model path as inference_zero_shot with text_frontend=False.
                     # Measure all embeddings before starting autoregressive speech generation.
-                    if args.m05a2:
+                    if controlled:
                         # Observe the pinned loader's outputs without changing its resampling.
                         import cosyvoice.cli.frontend as frontend_module
                         loader = frontend_module.load_wav
@@ -281,7 +304,7 @@ def main():
                 audio = torch.cat(chunks, dim=1).squeeze(0).numpy()
                 if not len(audio) or not np.isfinite(audio).all() or not np.any(audio):
                     raise ValueError("Empty, nonfinite or silent synthesis")
-                wav = output / (item["stem"] + ".wav" if args.m05a2 else f"{ref}_{item['id']}.wav")
+                wav = output / (item["stem"] + ".wav" if controlled else f"{ref}_{item['id']}.wav")
                 sf.write(str(wav), audio, model.sample_rate, subtype="PCM_16")
                 decoded, sample_rate = sf.read(str(wav), always_2d=True)
                 if len(decoded) != len(audio) or sample_rate != model.sample_rate or decoded.shape[1] != 1:
@@ -301,20 +324,20 @@ def main():
                 record.update(cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(),
                               cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved())
             record["resources"] = resources.summary()
-            sample_stem = item["stem"].replace("/", "_") if args.m05a2 else f"{ref}_{item['id']}"
+            sample_stem = item["stem"].replace("/", "_") if controlled else f"{ref}_{item['id']}"
             write_json(report / (sample_stem + "_samples.json"), resources.samples)
-            result_file = "segments.jsonl" if args.m05a2 and item["grouped"] else "results.jsonl"
+            result_file = "segments.jsonl" if controlled and item["grouped"] else "results.jsonl"
             with (report / result_file).open("a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        if args.m05a2 and item["grouped"]:
-            completed_segments.setdefault(item["id"], []).append(record)
+        if controlled and item["grouped"]:
+            completed_segments.setdefault((item["group"], item["id"]), []).append(record)
         print(json.dumps({k: record[k] for k in ("reference_id", "text_id", "status", "synthesis_s", "duration_s")}, ensure_ascii=False), flush=True)
-    if args.m05a2:
+    if controlled:
         for plan in plans:
             if len(plan["segments"]) < 2:
                 continue
-            segments = completed_segments[plan["text_id"]]
-            wav = output / ("C_" + plan["text_id"] + ".wav")
+            segments = completed_segments[(plan["group"], plan["text_id"])]
+            wav = output / (plan["group"] + "_" + plan["text_id"] + ".wav")
             mapping = join_segments([output / segment["wav"] for segment in segments], wav, sample_rate=24000)
             decoded, rate = sf.read(str(wav), always_2d=True)
             record = {key: value for key, value in segments[0].items()
@@ -330,11 +353,11 @@ def main():
             with (report / "results.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
         write_json(report / "references.json", resolved)
-        after = preserved_files(args.source_root)
+        after = preserved_files(args.source_root, m05a3=args.m05a3)
         write_json(report / "preservation_after.json", after)
         write_json(report / "preservation_check.json", {"unchanged": before == after, "file_count": len(before)})
         if before != after:
-            raise ValueError("Historical files or source inputs changed during M05A2")
+            raise ValueError("Historical files or source inputs changed during " + task)
 
 
 if __name__ == "__main__":
