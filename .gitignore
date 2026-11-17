@@ -1,5 +1,5 @@
 # Private data, assets, credentials, runtimes and model outputs stay local.
-/local/
+local/
 .env
 .env.*
 !.env.example
@@ -12,6 +12,9 @@
 .git-credentials
 credentials*.json
 secrets*.json
+.ssh/
+secrets/
+credentials/
 
 # Isolated environments, caches and generated files.
 .venv/
@@ -21,21 +24,51 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+node_modules/
 *.egg-info/
-/build/
-/dist/
+build/
+dist/
 **/bin/
 **/obj/
 
 # Defense in depth for assets accidentally placed outside local/.
 *.wav
 *.mp3
+*.flac
+*.ogg
+*.opus
+*.m4a
+*.aac
+*.aiff
+*.wma
 *.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
 *.gguf
 *.safetensors
 *.pt
 *.pth
 *.onnx
+*.ckpt
+*.h5
+*.hdf5
+*.bin
+*.pak
+*.ucas
+*.utoc
+*.zip
+*.7z
+*.rar
+*.exe
+*.dll
+*.so
+*.dylib
 *.sqlite*
 *.db
 *.log
