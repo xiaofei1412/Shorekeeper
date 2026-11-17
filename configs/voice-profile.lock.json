@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "profile_version": "shorekeeper-r1-v1",
+  "processing_version": "m05b1-sentences-v1",
+  "runtime_lock": "configs/voice-runtime.lock.json",
+  "runtime_lock_sha256": "420d74eceba0e242fce0be43a752974daaa2c57ad28664dd1615a6d4e4129862",
+  "reference_id": "R1",
+  "reference_asset_id": "5ee6fa77-4bad-45f0-b7a5-ef99c8bdc7ff",
+  "reference_sha256": "97520478cd4a4b848909d810cd5703c14476dfd084cd14f7034eb07c9dc8aed2",
+  "reference_mode": "original48k",
+  "transcript_id": "M02C-T-A05",
+  "prompt_prefix": "You are a helpful assistant.<|endofprompt|>",
+  "seed": 20261117,
+  "seed_policy": "reset_same_seed_for_each_complete_sentence_no_retry",
+  "grouping": "sentence_ranges: Chinese full stop and Chinese/ASCII question or exclamation; retain ASCII periods, decimals and abbreviations",
+  "join_policy": "preserve_native_edges_top_up_to_180ms",
+  "sample_rate": 24000,
+  "channels": 1,
+  "subtype": "PCM_16",
+  "device": "cuda",
+  "torch_threads": 4
+}

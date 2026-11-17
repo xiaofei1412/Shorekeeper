@@ -4,7 +4,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, UUID4
 
 
 class ApiError(BaseModel):
-    code: Literal["INVALID_ARGUMENT", "UNAUTHENTICATED", "DEPENDENCY_UNAVAILABLE"]
+    code: Literal[
+        "INVALID_ARGUMENT", "UNAUTHENTICATED", "DEPENDENCY_UNAVAILABLE", "NOT_FOUND",
+        "BUSY", "BUDGET_EXCEEDED", "TIMEOUT", "INTERNAL",
+    ]
     message: str
     request_id: UUID4
     retryable: bool = False
@@ -34,5 +37,5 @@ class SpeechResult(BaseModel):
     status: Literal["succeeded", "failed", "cancelled"]
     audio_asset_id: UUID4 | None = None
     format: str | None = None
-    duration_s: Annotated[float, Field(gt=0)] | None = None
+    duration_s: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = None
     error: ApiError | None = None

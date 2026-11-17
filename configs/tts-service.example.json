@@ -1,0 +1,9 @@
+{
+  "voice_python": "../envs/voice-M05A/Scripts/python.exe",
+  "source_root": "../..",
+  "runtime_root": "../models/tts/M05A",
+  "model_manifest": "../reports/M05A/model_files.json",
+  "cache_root": "../cache/voice-M05B1",
+  "output_root": "tts",
+  "log_root": "../reports/M05B1/service-01"
+}

@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 import socket
 
 import uvicorn
@@ -8,8 +9,10 @@ from shorekeeper.config import DEFAULT_PORT, HOST, SESSION_TOKEN_PATH, load_sess
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Shorekeeper M01A local process API")
+    parser = argparse.ArgumentParser(description="Shorekeeper local process and TTS API")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--token-file", type=Path, default=SESSION_TOKEN_PATH)
+    parser.add_argument("--tts-config", type=Path, help="Explicit private TTS configuration; omitted disables TTS")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
@@ -24,14 +27,14 @@ def main() -> None:
         except OSError:
             parser.exit(1, f"Cannot listen on {HOST}:{args.port}; port is in use or unavailable. Try --port.\n")
 
-        token_path = SESSION_TOKEN_PATH
+        token_path = args.token_file
         try:
             token = load_session_token(token_path)
         except (OSError, UnicodeError, ValueError):
             parser.exit(1, f"Cannot load session token at {token_path}; check or remove the file and retry.\n")
         print(f"Local session token file: {token_path}", flush=True)
         config = uvicorn.Config(
-            create_app(token), host=HOST, port=args.port,
+            create_app(token, args.tts_config), host=HOST, port=args.port,
             access_log=False, proxy_headers=False,
         )
         uvicorn.Server(config).run(sockets=[listener])
