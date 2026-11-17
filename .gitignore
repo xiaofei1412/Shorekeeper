@@ -1,0 +1,41 @@
+# Private data, assets, credentials, runtimes and model outputs stay local.
+/local/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
+.netrc
+.git-credentials
+credentials*.json
+secrets*.json
+
+# Isolated environments, caches and generated files.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+/build/
+/dist/
+**/bin/
+**/obj/
+
+# Defense in depth for assets accidentally placed outside local/.
+*.wav
+*.mp3
+*.mp4
+*.gguf
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.sqlite*
+*.db
+*.log

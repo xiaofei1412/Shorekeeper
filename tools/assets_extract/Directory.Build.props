@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../../local/tools/m02c-probe/bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../local/tools/m02c-probe/obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

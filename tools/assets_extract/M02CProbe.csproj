@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../local/tools/CUE4Parse-4d2301a8eb129f593f1c76ff82612400801f1a94/CUE4Parse/CUE4Parse.csproj" />
+  </ItemGroup>
+</Project>
