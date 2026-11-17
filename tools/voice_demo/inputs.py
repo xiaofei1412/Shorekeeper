@@ -54,8 +54,8 @@ def _jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def resolve_reference(source_root: Path, reference_id: str, derived_dir: Path) -> dict:
-    """Validate manifest/owner/transcript provenance, then derive 16 kHz mono PCM16."""
+def resolve_reference(source_root: Path, reference_id: str, derived_dir: Path, *, original=False) -> dict:
+    """Validate provenance; optionally pass the untouched 48 kHz original upstream."""
     if reference_id not in REFERENCES:
         raise ValueError("reference_id must be R1 or R2")
     expected = REFERENCES[reference_id]
@@ -107,23 +107,7 @@ def resolve_reference(source_root: Path, reference_id: str, derived_dir: Path) -
     audio, decoded_rate = sf.read(str(source_path), dtype="float32", always_2d=True)
     if decoded_rate != rate or audio.shape != (frames, channels) or not np.isfinite(audio).all():
         raise ValueError("Decoded reference does not match WAV metadata")
-    mono = audio.mean(axis=1)
-    divisor = math.gcd(rate, 16000)
-    converted = resample_poly(mono, 16000 // divisor, rate // divisor)
-    derived_dir.mkdir(parents=True, exist_ok=True)
-    derived_path = derived_dir / (reference_id + "-16000-mono-pcm16.wav")
-    temporary_path = derived_dir / (reference_id + "-16000-mono-pcm16.pending.wav")
-    if temporary_path.exists():
-        raise FileExistsError("Pending derived file already exists: " + str(temporary_path))
-    sf.write(str(temporary_path), converted, 16000, subtype="PCM_16", format="WAV")
-    if derived_path.exists():
-        identical = _sha256(derived_path) == _sha256(temporary_path)
-        temporary_path.unlink()
-        if not identical:
-            raise FileExistsError("Refusing to overwrite different derived audio: " + str(derived_path))
-    else:
-        temporary_path.rename(derived_path)
-    return {
+    result = {
         "reference_id": reference_id,
         "asset_id": expected["asset_id"],
         "source_sha256": expected["source_sha256"],
@@ -143,6 +127,31 @@ def resolve_reference(source_root: Path, reference_id: str, derived_dir: Path) -
             "sample_rate": rate, "channels": channels, "sample_width_bytes": width,
             "frames": frames, "duration_s": frames / rate, "format": "PCM WAV",
         },
+        "rights": manifest.get("rights"),
+    }
+    if original:
+        if (rate, channels, width) != (48000, 1, 3):
+            raise ValueError("M05A2 requires the original 48 kHz mono PCM24 reference")
+        result.update(input_path=str(source_path), input_sha256=expected["source_sha256"],
+                      input_mode="original48k")
+        return result
+    mono = audio.mean(axis=1)
+    divisor = math.gcd(rate, 16000)
+    converted = resample_poly(mono, 16000 // divisor, rate // divisor)
+    derived_dir.mkdir(parents=True, exist_ok=True)
+    derived_path = derived_dir / (reference_id + "-16000-mono-pcm16.wav")
+    temporary_path = derived_dir / (reference_id + "-16000-mono-pcm16.pending.wav")
+    if temporary_path.exists():
+        raise FileExistsError("Pending derived file already exists: " + str(temporary_path))
+    sf.write(str(temporary_path), converted, 16000, subtype="PCM_16", format="WAV")
+    if derived_path.exists():
+        identical = _sha256(derived_path) == _sha256(temporary_path)
+        temporary_path.unlink()
+        if not identical:
+            raise FileExistsError("Refusing to overwrite different derived audio: " + str(derived_path))
+    else:
+        temporary_path.rename(derived_path)
+    result.update({
         "derived_path": str(derived_path),
         "derived_sha256": _sha256(derived_path),
         "derived_audio": {
@@ -152,5 +161,5 @@ def resolve_reference(source_root: Path, reference_id: str, derived_dir: Path) -
             "up": 16000 // divisor, "down": rate // divisor,
             "mono_conversion": "arithmetic channel mean",
         },
-        "rights": manifest.get("rights"),
-    }
+    })
+    return result

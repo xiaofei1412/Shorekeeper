@@ -127,6 +127,30 @@ class ReferenceTests(unittest.TestCase):
             inputs.resolve_reference(self.root, "R1", self.source.parent)
 
     @unittest.skipUnless(HAS_AUDIO_DEPS, "numpy/scipy/soundfile required")
+    def test_original48k_uses_exact_source_without_deriving(self):
+        with wave.open(str(self.source), "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(3)
+            stream.setframerate(48000)
+            stream.writeframes(b"\x00\x00\x01" * 48000)
+        digest = inputs._sha256(self.source)
+        self.expected["source_sha256"] = digest
+        self.manifest["sha256"] = digest
+        self.owner["source_sha256"] = digest
+        self.transcript["source_sha256"] = digest
+        self._write_records()
+        result = inputs.resolve_reference(self.root, "R1", self.derived, original=True)
+        self.assertEqual(Path(result["input_path"]), self.source.resolve())
+        self.assertEqual(result["input_sha256"], digest)
+        self.assertNotIn("derived_path", result)
+        self.assertFalse(self.derived.exists())
+
+    @unittest.skipUnless(HAS_AUDIO_DEPS, "numpy/scipy/soundfile required")
+    def test_original48k_rejects_lower_precision_reference(self):
+        with self.assertRaisesRegex(ValueError, "48 kHz mono PCM24"):
+            inputs.resolve_reference(self.root, "R1", self.derived, original=True)
+
+    @unittest.skipUnless(HAS_AUDIO_DEPS, "numpy/scipy/soundfile required")
     def test_conversion_is_complete_repeatable_and_preserves_source(self):
         before = self.source.read_bytes()
         result = self.resolve()
