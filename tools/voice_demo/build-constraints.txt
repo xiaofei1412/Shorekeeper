@@ -1,0 +1,2 @@
+# openai-whisper 20231117 imports pkg_resources during its legacy build.
+setuptools==80.9.0
